@@ -7,6 +7,7 @@ from __future__ import print_function
 
 
 def get_dataset_paths(data_root, dataset_tok):
+    train_order = None
     if dataset_tok == "aspec_jaen":
         train_src_corpus = "{}/aspec.ja.bpe40k".format(data_root)
         train_tgt_corpus = "{}/aspec.case.en.bpe40k".format(data_root)
@@ -41,10 +42,29 @@ def get_dataset_paths(data_root, dataset_tok):
         training_warmsteps = 4000
         training_maxsteps = 100000
         pretrained_autoregressive_path = "{}/wmt14_ende_teacher.pt".format(data_root)
+    if dataset_tok == "test_reordering_label":
+        train_src_corpus = "{}/wmt14_ende_train.en.sp".format(data_root)
+        train_tgt_corpus = "{}/wmt14_ende_train.de.sp".format(data_root)
+        train_order = "{}/wmt14_ende_train.label".format(data_root)
+        distilled_tgt_corpus = "{}/wmt14_ende.distill.tgt".format(data_root)
+        truncate_datapoints = None
+
+        test_src_corpus = "{}/wmt14_ende_test.en.sp".format(data_root)
+        test_tgt_corpus = "{}/wmt14_ende_test.de.sp".format(data_root)
+        ref_path = "{}/wmt14_ende_test.de".format(data_root)
+
+        src_vocab_path = "{}/wmt14.en.sp.vocab".format(data_root)
+        tgt_vocab_path = "{}/wmt14.de.sp.vocab".format(data_root)
+
+        n_valid_per_epoch = 1
+        training_warmsteps = 4000
+        training_maxsteps = 100000
+        pretrained_autoregressive_path = "{}/wmt14_ende_teacher.pt".format(data_root)
 
     return (
         train_src_corpus,
         train_tgt_corpus,
+        train_order,
         distilled_tgt_corpus,
         truncate_datapoints,
         test_src_corpus,

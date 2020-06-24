@@ -34,6 +34,7 @@ class LANMTModel(Transformer):
                  KL_budget=1., KL_weight=1.,
                  budget_annealing=True,
                  max_train_steps=100000,
+                 label_size=3,
                  **kwargs):
         """Create Latent-variable non-autoregressive NMT model.
 
@@ -55,6 +56,7 @@ class LANMTModel(Transformer):
         self.KL_weight = KL_weight
         self.budget_annealing = budget_annealing
         self.max_train_steps = max_train_steps
+        self.label_size = label_size + 4  # +4 for special tokens
         if OPTS.finetune:
             self.training_criteria = "BLEU"
         else:
@@ -84,6 +86,8 @@ class LANMTModel(Transformer):
         self.latent2vector_nn = nn.Linear(self.latent_dim, self.hidden_size)
         # Length prediction
         self.length_predictor = nn.Linear(self.hidden_size, 100)
+        # Reordering Label prediction
+        self.label_predictor = nn.Linear(self.hidden_size, self.label_size)
         # Word probability estimator
         self.expander_nn = nn.Linear(self.hidden_size, self._tgt_vocab_size)
         self.label_smooth = LabelSmoothingKLDivLoss(0.1, self._tgt_vocab_size, 0)
@@ -137,6 +141,22 @@ class LANMTModel(Transformer):
             "len_acc": length_acc
         }
         return length_scores
+
+    def compute_label_predictor_loss(self, xz_states, z, z_mask, label):
+        """
+        Get the loss for label predictor.
+        xz_states: p(z|x)
+        z: q(z|x, y)
+        """
+        mean_z = ((z + xz_states) * z_mask[:, :, None]) / 2
+        pred_labels = self.label_predictor(mean_z)
+        label_loss = F.cross_entropy(pred_labels.reshape(-1, self.label_size), label.reshape(-1), reduction="mean")
+        label_acc = ((pred_labels.argmax(-1) == label).sum(1) / z_mask.sum(1)[:, None]).mean()
+        label_scores = {
+            "label_loss": label_loss,
+            "label_acc": label_acc,
+        }
+        return label_scores
 
     def compute_vae_KL(self, prior_prob, q_prob):
         """Compute KL divergence given two Gaussians.
@@ -226,10 +246,14 @@ class LANMTModel(Transformer):
         score_map["loss"] = remain_loss + score_map["nll"]
         return score_map, remain_loss
 
-    def forward(self, x, y, sampling=False, return_code=False):
+    def forward(self, x, y, label=None, sampling=False, return_code=False):
         """Model training.
         """
+        assert label is not None
         score_map = {}
+        x, y = x.T, y.T
+        if label is not None:
+            label = label.T
         x_mask = self.to_float(torch.ne(x, 0))
         y_mask = self.to_float(torch.ne(y, 0))
 
@@ -242,6 +266,11 @@ class LANMTModel(Transformer):
         # Sample latent variables from q(z|x,y)
         z_mask = x_mask
         sampled_z, q_prob = self.sample_from_Q(q_states)
+
+        # -----------------  Predict Reordering Label -----------------------#
+        # Compute label prediction loss
+        label_scores = self.compute_label_predictor_loss(prior_states, sampled_z, z_mask, label)
+        score_map.update(label_scores)
 
         # -----------------  Convert the length of latents ------------------#
         # Compute length prediction loss

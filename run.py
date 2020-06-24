@@ -8,15 +8,16 @@ This model unifies the training of decoder, latent encoder, latent predictor
 from __future__ import division
 from __future__ import print_function
 
-import os, sys
+import os
+import sys
 import time
 import importlib
 import torch
 from torch import optim
-sys.path.append(".")
 
 import nmtlab
-from nmtlab import MTTrainer, MTDataset
+# from nmtlab import MTTrainer, MTDataset
+from nmtlab import MTTrainer
 from nmtlab.utils import OPTS, Vocab
 from nmtlab.schedulers import TransformerScheduler, SimpleScheduler
 from nmtlab.utils import is_root_node
@@ -25,10 +26,12 @@ from collections import defaultdict
 import numpy as np
 from argparse import ArgumentParser
 
+from my_reordering_dateset import MTReorderingDataset
 from lib_lanmt_model import LANMTModel
 from lib_rescoring import load_rescoring_transformer
 from datasets import get_dataset_paths
 
+sys.path.append(".")
 DATA_ROOT = "./mydata"
 PRETRAINED_MODEL_MAP = {
     "wmt14_ende": "{}/shu_trained_wmt14_ende.pt".format(DATA_ROOT),
@@ -54,6 +57,7 @@ ap.add_argument("--opt_embedsz", type=int, default=512)
 ap.add_argument("--opt_heads", type=int, default=8)
 ap.add_argument("--opt_shard", type=int, default=32)
 ap.add_argument("--opt_longertrain", action="store_true")
+ap.add_argument("--opt_labelsz", type=int, default=3)
 
 # Options for LANMT
 ap.add_argument("--opt_priorl", type=int, default=6, help="layers for each z encoder")
@@ -102,6 +106,7 @@ if is_root_node():
 (
     train_src_corpus,
     train_tgt_corpus,
+    train_label,
     distilled_tgt_corpus,
     truncate_datapoints,
     test_src_corpus,
@@ -118,8 +123,8 @@ if is_root_node():
 if OPTS.longertrain:
     training_maxsteps = int(training_maxsteps * 1.5)
 
-if nmtlab.__version__ < "0.7.0":
-    print("lanmt now requires nmtlab >= 0.7.0")
+if nmtlab.__version__ < "0.7.4":
+    print("lanmt now requires nmtlab >= 0.7.4")
     print("Update by pip install -U nmtlab")
     sys.exit()
 if OPTS.fp16:
@@ -131,14 +136,22 @@ if OPTS.distill:
     tgt_corpus = distilled_tgt_corpus
 else:
     tgt_corpus = train_tgt_corpus
+
 n_valid_samples = 5000 if OPTS.finetune else 500
 if OPTS.train:
-    dataset = MTDataset(
-        src_corpus=train_src_corpus, tgt_corpus=tgt_corpus,
+    # dataset = MTDataset(
+    #     src_corpus=train_src_corpus, tgt_corpus=tgt_corpus,
+    #     src_vocab=src_vocab_path, tgt_vocab=tgt_vocab_path,
+    #     batch_size=OPTS.batchtokens * gpu_num, batch_type="token",
+    #     truncate=truncate_datapoints, max_length=TRAINING_MAX_TOKENS,
+    #     n_valid_samples=n_valid_samples)
+    dataset = MTReorderingDataset(
+        src_corpus=train_src_corpus, tgt_corpus=tgt_corpus, label_corpus=train_label,
         src_vocab=src_vocab_path, tgt_vocab=tgt_vocab_path,
         batch_size=OPTS.batchtokens * gpu_num, batch_type="token",
         truncate=truncate_datapoints, max_length=TRAINING_MAX_TOKENS,
-        n_valid_samples=n_valid_samples)
+        n_valid_samples=n_valid_samples
+    )
 else:
     dataset = None
 
@@ -159,6 +172,7 @@ lanmt_options.update(dict(
     KL_budget=0. if OPTS.finetune else 1.,
     budget_annealing=OPTS.annealbudget,
     max_train_steps=training_maxsteps,
+    label_size=OPTS.labelsz,
     fp16=OPTS.fp16
 ))
 
