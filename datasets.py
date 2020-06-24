@@ -7,7 +7,6 @@ from __future__ import print_function
 
 
 def get_dataset_paths(data_root, dataset_tok):
-    train_order = None
     if dataset_tok == "aspec_jaen":
         train_src_corpus = "{}/aspec.ja.bpe40k".format(data_root)
         train_tgt_corpus = "{}/aspec.case.en.bpe40k".format(data_root)
@@ -56,7 +55,7 @@ def get_dataset_paths(data_root, dataset_tok):
         src_vocab_path = "{}/wmt14.en.sp.vocab".format(data_root)
         tgt_vocab_path = "{}/wmt14.de.sp.vocab".format(data_root)
 
-        n_valid_per_epoch = 1
+        n_valid_per_epoch = 8
         training_warmsteps = 4000
         training_maxsteps = 100000
         pretrained_autoregressive_path = "{}/wmt14_ende_teacher.pt".format(data_root)

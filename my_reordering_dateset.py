@@ -62,7 +62,7 @@ class MTReorderingDataset(Dataset):
             assert type(truncate) == int
             examples = examples[:truncate]
         n_train_samples = len(examples) - n_valid_samples
-        n_train_samples = int(n_train_samples / batch_size) * batch_size
+        n_train_samples = int((n_train_samples + batch_size - 1) // batch_size) * batch_size
         # Shuffle and sort examples
         np.random.RandomState(3).shuffle(examples)
         train_examples = examples[n_valid_samples:n_valid_samples + n_train_samples]
