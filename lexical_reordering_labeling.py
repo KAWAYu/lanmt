@@ -45,25 +45,25 @@ def main():
                 elif args.mode == 'remove':
                     pass  # Null Alignmentに対する処理は何もしなくていい
 
-        source_to_target_indices = [-1 for _ in range(len(source_word))]
-        for i, tword_align in enumerate(target_align):
-            for ta in tword_align:
-                source_to_target_indices[ta] = i
+            source_to_target_indices = [-1 for _ in range(len(source_word))]
+            for i, tword_align in enumerate(target_align):
+                for ta in tword_align:
+                    source_to_target_indices[ta - 1] = i
 
-        prei = 0
-        source_to_target_label = ["" for _ in range(len(source_word))]
-        for i, si in enumerate(source_to_target_indices):
-            if prei == si or prei + 1 == si:
-                source_to_target_label[i] = "M"
-            elif prei - 1 == si:
-                source_to_target_label[i] = "S"
-            elif prei < si:
-                source_to_target_label[i] = "DR"
-            else:
-                source_to_target_label[i] = "DL"
-            prei = si
+            prei = 0
+            source_to_target_label = ["" for _ in range(len(source_word))]
+            for i, si in enumerate(source_to_target_indices):
+                if prei == si or prei + 1 == si:
+                    source_to_target_label[i] = "M"
+                elif prei - 1 == si:
+                    source_to_target_label[i] = "S"
+                elif prei < si:
+                    source_to_target_label[i] = "DR"
+                else:
+                    source_to_target_label[i] = "DL"
+                prei = si
 
-        print(*source_to_target_label, file=fout)
+            print(*source_to_target_label, file=fout)
 
 
 if __name__ == '__main__':
