@@ -16,7 +16,8 @@ from torch import optim
 sys.path.append(".")
 
 import nmtlab
-from nmtlab import MTTrainer, MTDataset
+from nmtlab import MTTrainer  # , MTDataset
+from reordering_mt_dateset import MTDataset
 from nmtlab.utils import OPTS, Vocab
 from nmtlab.schedulers import TransformerScheduler, SimpleScheduler
 from nmtlab.utils import is_root_node
@@ -103,6 +104,7 @@ if is_root_node():
     train_src_corpus,
     train_tgt_corpus,
     distilled_tgt_corpus,
+    train_reordering_position,
     truncate_datapoints,
     test_src_corpus,
     test_tgt_corpus,
@@ -118,8 +120,8 @@ if is_root_node():
 if OPTS.longertrain:
     training_maxsteps = int(training_maxsteps * 1.5)
 
-if nmtlab.__version__ < "0.7.0":
-    print("lanmt now requires nmtlab >= 0.7.0")
+if nmtlab.__version__ < "0.7.4":
+    print("lanmt now requires nmtlab >= 0.7.4")
     print("Update by pip install -U nmtlab")
     sys.exit()
 if OPTS.fp16:
@@ -135,6 +137,7 @@ n_valid_samples = 5000 if OPTS.finetune else 500
 if OPTS.train:
     dataset = MTDataset(
         src_corpus=train_src_corpus, tgt_corpus=tgt_corpus,
+        reordering_position=train_reordering_position,
         src_vocab=src_vocab_path, tgt_vocab=tgt_vocab_path,
         batch_size=OPTS.batchtokens * gpu_num, batch_type="token",
         truncate=truncate_datapoints, max_length=TRAINING_MAX_TOKENS,
