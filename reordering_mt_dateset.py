@@ -15,7 +15,7 @@ from nmtlab.dataset.fixed_iterator import FixedBucketIterator
 
 
 class OrderField(torchtext.data.RawField):
-    def process(self, batch, device=None):
+    def process(self, batch, device=None, **kwargs):
         # <s> に合わせるために [0] 追加と index をそれぞれ +1、</s> に合わせるために後ろに index を追加
         xlist = [[0] + list(map(lambda xi: int(xi) + 1, _x.strip().split())) for _x in batch]
         max_len = max(len(_x) for _x in xlist)
@@ -146,8 +146,7 @@ class MTDataset(Dataset):
 
     def _len_filter(self, sample):
         return (
-                len(sample.src) > 2 and len(sample.tgt) > 2 and
-                len(sample.src) <= self._max_length and len(sample.tgt) <= self._max_length
+                2 < len(sample.src) <= self._max_length and 2 < len(sample.tgt) <= self._max_length
         )
 
     def n_train_samples(self):

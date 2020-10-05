@@ -41,7 +41,7 @@ def get_dataset_paths(data_root, dataset_tok):
         training_warmsteps = 4000
         training_maxsteps = 100000
         pretrained_autoregressive_path = "{}/wmt14_ende_teacher.pt".format(data_root)
-    if dataset_tok == "reordering":
+    if dataset_tok == "reordering_test":
         train_src_corpus = "{}/wmt14_ende_train.en.sp".format(data_root)
         train_tgt_corpus = "{}/wmt14_ende_train.de.sp".format(data_root)
         distilled_tgt_corpus = "{}/wmt14_ende.distill.tgt".format(data_root)
