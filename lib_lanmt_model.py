@@ -21,115 +21,12 @@ from nmtlab.utils import TensorMap
 from nmtlab.utils import smoothed_bleu
 
 from lib_lanmt_modules import TransformerEncoder
-from nmtlab.modules.transformer_modules import TransformerEncoderLayer
-from lib_lanmt_modules import TransformerCrossEncoderLayer
 from lib_lanmt_modules import TransformerCrossEncoder
-from lib_lanmt_modules import LengthConverter
+from lib_lanmt_modules import LengthConverterWithReordering
 from lib_vae import VAEBottleneck
 
 
-class TransformerReorderEmbedding(nn.Embedding):
-    """
-    Rescale the embeddings.
-    TODO: share the weight with pre-softmax linear transformation
-    """
-
-    def __init__(self, num_embeddings, embedding_dim, dropout_ratio=0.1):
-        super(TransformerReorderEmbedding, self).__init__(num_embeddings, embedding_dim)
-        self.pos_layer = PositionalEmbedding(embedding_dim)
-        self.dropout = nn.Dropout(dropout_ratio)
-
-    def forward(self, x, order, start=None, positional_encoding=True):
-        """
-        Compute the embeddings with positional encoder
-        Args:
-            x - input sequence ~ (batch, len)
-            order - input order ~ (batch, len)
-            start - the begining position (option)
-            positional_encoding - whether using positional encoding
-        """
-        embed = super(TransformerReorderEmbedding, self).forward(x)
-        embed = embed * math.sqrt(self.embedding_dim)
-        if positional_encoding:
-            if embed.dim() == 2:
-                # Collapse one dimension of positional embedding
-                # 多分 lanmt を走らせる時にこっちには分岐しない
-                pos_embed = self.pos_layer(embed.unsqueeze(1), start=start)
-                pos_embed = pos_embed.squeeze(1)
-            else:
-                pos_embed = self.pos_layer(embed, start=start)
-                pos_embed = pos_embed.expand(embed.size())
-                # order = order.transpose(0, 1).unsqueeze(2).expand((-1, -1, embed.size(2)))
-                order = order.unsqueeze(2).expand((-1, -1, embed.size(2)))
-                pos_embed = pos_embed.gather(1, order)
-            embed += pos_embed
-        return self.dropout(embed)
-
-
-class TransformerReorderEncoder(nn.Module):
-    """
-    Self-attention -> FF -> layer norm
-    """
-
-    def __init__(self, embed_layer, size, n_layers, ff_size=None, n_att_head=8, dropout_ratio=0.1, skip_connect=False):
-        super(TransformerReorderEncoder, self).__init__()
-        if ff_size is None:
-            ff_size = size * 4
-        self.embed_layer = embed_layer
-        self.layer_norm = nn.LayerNorm(size)
-        self.encoder_layers = nn.ModuleList()
-        self.skip_connect = skip_connect
-        self._rescale = 1. / math.sqrt(2)
-        for _ in range(n_layers):
-            layer = TransformerEncoderLayer(size, ff_size, n_att_head=n_att_head,
-                                            dropout_ratio=dropout_ratio)
-            self.encoder_layers.append(layer)
-
-    def forward(self, x, order, mask=None):
-        if self.embed_layer is not None:
-            x = self.embed_layer(x, order)
-        first_x = x
-        for l, layer in enumerate(self.encoder_layers):
-            x = layer(x, mask)
-            if self.skip_connect:
-                x = self._rescale * (first_x + x)
-        x = self.layer_norm(x)
-        return x
-
-
-class TransformerReorderCrossEncoder(nn.Module):
-    """
-    Self-attention -> cross-attenion -> FF -> layer norm
-    """
-
-    def __init__(self, embed_layer, size, n_layers, ff_size=None, n_att_head=8, dropout_ratio=0.1, skip_connect=False):
-        super(TransformerReorderCrossEncoder, self).__init__()
-        if ff_size is None:
-            ff_size = size * 4
-        self._skip = skip_connect
-        self._reslace = 1. / math.sqrt(2)
-        self.embed_layer = embed_layer
-        self.layer_norm = nn.LayerNorm(size)
-        self.encoder_layers = nn.ModuleList()
-        for _ in range(n_layers):
-            layer = TransformerCrossEncoderLayer(size, ff_size, n_att_head=n_att_head,
-                                                 dropout_ratio=dropout_ratio)
-            self.encoder_layers.append(layer)
-
-    def forward(self, x, x_mask, y, y_mask, order):
-        if self.embed_layer is not None:
-            x = self.embed_layer(x, order)
-        first_x = x
-        for l, layer in enumerate(self.encoder_layers):
-            x = layer(x, x_mask, y, y_mask)
-            if self._skip:
-                x = self._reslace * (first_x + x)
-        x = self.layer_norm(x)
-        return x
-
-
 class LANMTModel(Transformer):
-
     def __init__(self,
                  prior_layers=3, decoder_layers=3,
                  q_layers=6,
@@ -168,20 +65,20 @@ class LANMTModel(Transformer):
         """Define the modules
         """
         # Embedding layers
-        self.x_embed_layer = TransformerReorderEmbedding(self._src_vocab_size, self.embed_size)
+        self.x_embed_layer = TransformerEmbedding(self._src_vocab_size, self.embed_size)
         self.y_embed_layer = TransformerEmbedding(self._tgt_vocab_size, self.embed_size)
         self.pos_embed_layer = PositionalEmbedding(self.hidden_size)
         # Length Transformation
-        self.length_converter = LengthConverter()
+        self.length_converter = LengthConverterWithReordering()
         self.length_embed_layer = nn.Embedding(500, self.hidden_size)
         # Prior p(z|x)
-        self.prior_encoder = TransformerReorderEncoder(self.x_embed_layer, self.hidden_size, self.prior_layers)
+        self.prior_encoder = TransformerEncoder(self.x_embed_layer, self.hidden_size, self.prior_layers)
         self.prior_prob_estimator = nn.Linear(self.hidden_size, self.latent_dim * 2)
         # Approximator q(z|x,y)
         self.q_encoder_y = TransformerEncoder(self.y_embed_layer, self.hidden_size, self.q_layers)
-        self.q_encoder_xy = TransformerReorderCrossEncoder(None, self.hidden_size, self.q_layers)
+        self.q_encoder_xy = TransformerCrossEncoder(None, self.hidden_size, self.q_layers)
         # Decoder p(y|x,z)
-        self.decoder = TransformerReorderCrossEncoder(None, self.hidden_size, self.decoder_layers, skip_connect=True)
+        self.decoder = TransformerCrossEncoder(None, self.hidden_size, self.decoder_layers, skip_connect=True)
         # Bottleneck
         self.bottleneck = VAEBottleneck(self.hidden_size, z_size=self.latent_dim)
         self.latent2vector_nn = nn.Linear(self.latent_dim, self.hidden_size)
@@ -209,14 +106,14 @@ class LANMTModel(Transformer):
         sampled_latent, q_prob = self.sample_from_Q(q_states, sampling=False)
         return sampled_latent, q_prob
 
-    def compute_Q_states(self, x_states, x_mask, y, y_mask, order):
+    def compute_Q_states(self, x_states, x_mask, y, y_mask):
         """Compute the states for estimating q(z|x,y).
         """
         y_states = self.q_encoder_y(y, y_mask)
         if y.size(0) > x_states.size(0) and x_states.size(0) == 1:
             x_states = x_states.expand(y.size(0), -1, -1)
             x_mask = x_mask.expand(y.size(0), -1)
-        states = self.q_encoder_xy(x_states, x_mask, y_states, y_mask, order)
+        states = self.q_encoder_xy(x_states, x_mask, y_states, y_mask)
         return states
 
     def sample_from_Q(self, q_states, sampling=True):
@@ -253,23 +150,23 @@ class LANMTModel(Transformer):
         kl = kl.sum(-1)
         return kl
 
-    def convert_length(self, z, z_mask, target_lens):
+    def convert_length(self, z, z_mask, target_lens, order):
         """Adjust the number of latent variables.
         """
         rc = 1. / math.sqrt(2)
-        converted_vectors, _ = self.length_converter(z, target_lens, z_mask)
+        converted_vectors, _ = self.length_converter(z, target_lens, z_mask, order)
         pos_embed = self.pos_embed_layer(converted_vectors)
         len_embed = self.length_embed_layer(target_lens.long())
         converted_vectors = rc * converted_vectors + 0.5 * pos_embed + 0.5 * len_embed[:, None, :]
         return converted_vectors
 
-    def convert_length_with_delta(self, z, z_mask, delta):
+    def convert_length_with_delta(self, z, z_mask, delta, order):
         """Adjust the number of latent variables with predicted delta
         """
         z = z.clone()
         z_lens = z_mask.sum(1).long()
         y_lens = z_lens + delta
-        converted_vectors = self.convert_length(z, z_mask, y_lens)
+        converted_vectors = self.convert_length(z, z_mask, y_lens, order)
         # Create target-side mask
         arange = torch.arange(y_lens.max().long())
         if torch.cuda.is_available():
@@ -340,10 +237,10 @@ class LANMTModel(Transformer):
 
         # ----------- Compute prior and approximated posterior -------------#
         # Compute p(z|x)
-        prior_states = self.prior_encoder(x, order, x_mask)
+        prior_states = self.prior_encoder(x, x_mask)
         prior_prob = self.prior_prob_estimator(prior_states)
         # Compute q(z|x,y) and sample z
-        q_states = self.compute_Q_states(self.x_embed_layer(x, order), x_mask, y, y_mask, order)
+        q_states = self.compute_Q_states(self.x_embed_layer(x), x_mask, y, y_mask)
         # Sample latent variables from q(z|x,y)
         z_mask = x_mask
         sampled_z, q_prob = self.sample_from_Q(q_states)
@@ -353,10 +250,10 @@ class LANMTModel(Transformer):
         length_scores = self.compute_length_predictor_loss(prior_states, sampled_z, z_mask, y_mask)
         score_map.update(length_scores)
         # Padding z to fit target states
-        z_with_y_length = self.convert_length(sampled_z, z_mask, y_mask.sum(-1))
+        z_with_y_length = self.convert_length(sampled_z, z_mask, y_mask.sum(-1), order)
 
         # --------------------------  Decoder -------------------------------#
-        decoder_states = self.decoder(z_with_y_length, y_mask, prior_states, x_mask, order)
+        decoder_states = self.decoder(z_with_y_length, y_mask, prior_states, x_mask)
 
         # --------------------------  Compute losses ------------------------#
         decoder_outputs = TensorMap({"final_states": decoder_states})
@@ -386,7 +283,7 @@ class LANMTModel(Transformer):
             import pdb;pdb.set_trace()
         return score_map
 
-    def translate(self, x, latent=None, prior_states=None, refine_step=0):
+    def translate(self, x, order=None, latent=None, prior_states=None, refine_step=0):
         """ Testing codes.
         """
         x_mask = self.to_float(torch.ne(x, 0))
@@ -404,7 +301,7 @@ class LANMTModel(Transformer):
         # Predict length
         length_delta = self.predict_length(prior_states, latent, x_mask)
         # Adjust the number of latent
-        converted_z, y_mask, y_lens = self.convert_length_with_delta(latent, x_mask, length_delta + 1)
+        converted_z, y_mask, y_lens = self.convert_length_with_delta(latent, x_mask, length_delta + 1, order)
         if converted_z.size(1) == 0:
             return None, latent, prior_prob.argmax(-1)
         # Run decoder to predict the target words
