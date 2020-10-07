@@ -102,13 +102,16 @@ if is_root_node():
 corpus_dict = get_dataset_paths(DATA_ROOT, OPTS.dtok)
 train_src_corpus = corpus_dict["train_src_corpus"]
 train_tgt_corpus = corpus_dict["train_tgt_corpus"]
+train_reordering_position = corpus_dict["train_reordering_position"]
 valid_src_corpus = corpus_dict["valid_src_corpus"]
 valid_tgt_corpus = corpus_dict["valid_tgt_corpus"]
+valid_reordering_position = corpus_dict["valid_reordering_position"]
 distilled_tgt_corpus = corpus_dict["distilled_tgt_corpus"]
 distilled_valid_tgt_corpus = corpus_dict["distilled_valid_tgt_corpus"]
 truncate_datapoints = corpus_dict["truncate_datapoints"]
 test_src_corpus = corpus_dict["test_src_corpus"]
 test_tgt_corpus = corpus_dict["test_tgt_corpus"]
+test_reordering_position = corpus_dict["test_reordering_position"]
 ref_path = corpus_dict["ref_path"]
 src_vocab_path = corpus_dict["src_vocab_path"]
 tgt_vocab_path = corpus_dict["tgt_vocab_path"]
@@ -144,7 +147,8 @@ if OPTS.train:
         batch_size=OPTS.batchtokens * gpu_num, batch_type="token",
         truncate=truncate_datapoints, max_length=TRAINING_MAX_TOKENS,
         n_valid_samples=0)
-    dataset.use_valid_corpus(src_corpus=valid_src_corpus, tgt_corpus=tgt_valid)
+    dataset.use_valid_corpus(
+        src_corpus=valid_src_corpus, tgt_corpus=tgt_valid, reorder_corpus=valid_reordering_position)
 else:
     dataset = None
 
@@ -306,6 +310,8 @@ if OPTS.batch_test:
     # Read data
     batch_test_size = OPTS.Tbatch_size
     lines = open(test_src_corpus).readlines()
+    test_order = open(test_reordering_position).readlines()
+    assert len(lines) == len(test_order)
     sorted_line_ids = np.argsort([len(l.split()) for l in lines])
     start_time = time.time()
     output_tokens = []
@@ -313,27 +319,35 @@ if OPTS.batch_test:
     while i < len(lines):
         # Make a batch
         batch_lines = []
+        batch_orders = []
         max_len = 0
         while len(batch_lines) * max_len < OPTS.Tbatch_size:
             line_id = sorted_line_ids[i]
             line = lines[line_id]
+            ord = test_order[line_id]
             length = len(line.split())
             batch_lines.append(line)
+            batch_orders.append(ord)
             if length > max_len:
                 max_len = length
             i += 1
             if i >= len(lines):
                 break
         x = np.zeros((len(batch_lines), max_len + 2), dtype="long")
-        for j, line in enumerate(batch_lines):
+        order = np.tile(np.arange(max_len + 2, dtype="long").reshape(1, -1), (len(batch_orders), -1))
+        for j, line, ord in enumerate(zip(batch_lines, batch_orders)):
             tokens = src_vocab.encode("<s> {} </s>".format(line.strip()).split())
             x[j, :len(tokens)] = tokens
+            idxs = ord.strip().split(' ')
+            order[j, :len(idxs)] = idxs
         x = torch.tensor(x)
+        order = torch.tensor(order)
         if torch.cuda.is_available():
             x = x.cuda()
+            order = order.cuda()
         with torch.no_grad():
             # Predict latent and target words from prior
-            targets, _, prior_states = nmt.translate(x)
+            targets, _, prior_states = nmt.translate(x, order=order)
             # Interative inference
             for infer_step in range(OPTS.Trefine_steps):
                 # Sample latent from Q and draw a new target prediction

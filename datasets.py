@@ -46,13 +46,16 @@ def get_dataset_paths(data_root, dataset_tok):
         train_src_corpus = "{}/wmt14_ende_train.en.sp".format(data_root)
         train_tgt_corpus = "{}/wmt14_ende_train.de.sp".format(data_root)
         distilled_tgt_corpus = "{}/wmt14_ende.distill.tgt".format(data_root)
+        train_reordering_position = "{}/wmt14_ende_train.order".format(data_root)
         valid_src_corpus = "{}/wmt14_ende_test.en.sp".format(data_root)
         valid_tgt_corpus = "{}/wmt14_ende_test.de.sp".format(data_root)
+        valid_reordering_position = "{}/wmt14_ende_test.order".format(data_root)
         distilled_valid_tgt_corpus = "{}/wmt14_ende_test.de.sp".format(data_root)
         truncate_datapoints = None
 
         test_src_corpus = "{}/wmt14_ende_test.en.sp".format(data_root)
         test_tgt_corpus = "{}/wmt14_ende_test.de.sp".format(data_root)
+        test_reordering_position = "{}/wmt14_ende_test.order".format(data_root)
         ref_path = "{}/wmt14_ende_test.de".format(data_root)
 
         src_vocab_path = "{}/wmt14.en.sp.vocab".format(data_root)
@@ -66,13 +69,16 @@ def get_dataset_paths(data_root, dataset_tok):
     return {
         "train_src_corpus": train_src_corpus,
         "train_tgt_corpus": train_tgt_corpus,
+        "train_reordering_position": train_reordering_position,
         "valid_src_corpus": valid_src_corpus,
         "valid_tgt_corpus": valid_tgt_corpus,
+        "valid_reordering_position": valid_reordering_position,
         "distilled_tgt_corpus": distilled_tgt_corpus,
         "distilled_valid_tgt_corpus": distilled_valid_tgt_corpus,
         "truncate_datapoints": truncate_datapoints,
         "test_src_corpus": test_src_corpus,
         "test_tgt_corpus": test_tgt_corpus,
+        "test_reordering_position": test_reordering_position,
         "ref_path": ref_path,
         "src_vocab_path": src_vocab_path,
         "tgt_vocab_path": tgt_vocab_path,
