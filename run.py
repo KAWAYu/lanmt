@@ -134,10 +134,8 @@ if OPTS.fp16:
 # Define dataset
 if OPTS.distill:
     tgt_corpus = distilled_tgt_corpus
-    tgt_valid = distilled_valid_tgt_corpus
 else:
     tgt_corpus = train_tgt_corpus
-    tgt_valid = valid_tgt_corpus
 # n_valid_samples = 5000 if OPTS.finetune else 500
 if OPTS.train:
     dataset = MTDataset(
@@ -148,7 +146,7 @@ if OPTS.train:
         truncate=truncate_datapoints, max_length=TRAINING_MAX_TOKENS,
         n_valid_samples=0)
     dataset.use_valid_corpus(
-        src_corpus=valid_src_corpus, tgt_corpus=tgt_valid, reorder_corpus=valid_reordering_position)
+        src_corpus=valid_src_corpus, tgt_corpus=valid_tgt_corpus, reorder_corpus=valid_reordering_position)
 else:
     dataset = None
 
