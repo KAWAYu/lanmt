@@ -235,26 +235,30 @@ if OPTS.test or OPTS.all:
     result_path = OPTS.result_path
     # Read data
     lines = open(test_src_corpus).readlines()
+    order_lines = open(test_reordering_position).readlines()
     latent_candidate_num = OPTS.Tcandidate_num if OPTS.Tlatent_search else None
     decode_times = []
     with open(OPTS.result_path, "w") as outf:
-        for i, line in enumerate(lines):
+        for i, (line, order) in enumerate(zip(lines, order_lines)):
             # Make a batch
             tokens = src_vocab.encode("<s> {} </s>".format(line.strip()).split())
+            order_idx = [0] + [int(i) for i in order.strip().split()] + [len(order.strip().split())]
             x = torch.tensor([tokens])
+            ords = torch.tensor([order_idx])
             if torch.cuda.is_available():
                 x = x.cuda()
+                ords = ords.cuda()
             start_time = time.time()
             with torch.no_grad():
                 # Predict latent and target words from prior
-                targets, _, prior_states = nmt.translate(x)
+                targets, _, prior_states = nmt.translate(x, order=ords)
                 target_tokens = targets.cpu().numpy()[0].tolist()
                 # Interative inference
                 for infer_step in range(OPTS.Trefine_steps):
                     # Sample latent from Q and draw a new target prediction
                     prev_target = tuple(target_tokens)
                     new_latent, _ = nmt.compute_Q(x, targets)
-                    targets, _, _ = nmt.translate(x, latent=new_latent, prior_states=prior_states,
+                    targets, _, _ = nmt.translate(x, order=ords, latent=new_latent, prior_states=prior_states,
                                                   refine_step=infer_step + 1)
                     target_tokens = targets[0].cpu().numpy().tolist()
                     # Early stopping
