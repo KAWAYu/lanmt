@@ -22,7 +22,7 @@ from nmtlab.utils import smoothed_bleu
 
 from lib_lanmt_modules import TransformerEncoder
 from lib_lanmt_modules import TransformerCrossEncoder
-from lib_lanmt_modules import LengthConverterWithReordering
+from lib_lanmt_modules import LengthConverter
 from lib_vae import VAEBottleneck
 
 
@@ -69,7 +69,7 @@ class LANMTModel(Transformer):
         self.y_embed_layer = TransformerEmbedding(self._tgt_vocab_size, self.embed_size)
         self.pos_embed_layer = PositionalEmbedding(self.hidden_size)
         # Length Transformation
-        self.length_converter = LengthConverterWithReordering()
+        self.length_converter = LengthConverter()
         self.length_embed_layer = nn.Embedding(500, self.hidden_size)
         # Prior p(z|x)
         self.prior_encoder = TransformerEncoder(self.x_embed_layer, self.hidden_size, self.prior_layers)
@@ -150,23 +150,23 @@ class LANMTModel(Transformer):
         kl = kl.sum(-1)
         return kl
 
-    def convert_length(self, z, z_mask, target_lens, order):
+    def convert_length(self, z, z_mask, target_lens):
         """Adjust the number of latent variables.
         """
         rc = 1. / math.sqrt(2)
-        converted_vectors, _ = self.length_converter(z, target_lens, z_mask, order)
+        converted_vectors, _ = self.length_converter(z, target_lens, z_mask)
         pos_embed = self.pos_embed_layer(converted_vectors)
         len_embed = self.length_embed_layer(target_lens.long())
         converted_vectors = rc * converted_vectors + 0.5 * pos_embed + 0.5 * len_embed[:, None, :]
         return converted_vectors
 
-    def convert_length_with_delta(self, z, z_mask, delta, order):
+    def convert_length_with_delta(self, z, z_mask, delta):
         """Adjust the number of latent variables with predicted delta
         """
         z = z.clone()
         z_lens = z_mask.sum(1).long()
         y_lens = z_lens + delta
-        converted_vectors = self.convert_length(z, z_mask, y_lens, order)
+        converted_vectors = self.convert_length(z, z_mask, y_lens)
         # Create target-side mask
         arange = torch.arange(y_lens.max().long())
         if torch.cuda.is_available():
@@ -188,6 +188,17 @@ class LANMTModel(Transformer):
         logits = self.length_predictor(mean_z)
         delta = logits.argmax(-1) - 50
         return delta
+
+    def reordering_z(self, z, order):
+        """
+        Arranging the state z by order
+        Args:
+            z - latent variables, shape: B x L_x x hidden
+            order - index, shape: B x L_x
+        """
+        assert z.size(0) == order.size(0) and z.size(1) == order.size(1)
+        order_expand = order.unsqueeze(2).expand(z.size())
+        return z.gather(dim=1, index=order_expand)
 
     def compute_final_loss(self, q_prob, prior_prob, x_mask, score_map):
         """ Compute the report the loss.
@@ -245,12 +256,15 @@ class LANMTModel(Transformer):
         z_mask = x_mask
         sampled_z, q_prob = self.sample_from_Q(q_states)
 
+        # -----------------  Reordering z -----------------------------------#
+        sampled_z = self.reordering_z(sampled_z, order)
+
         # -----------------  Convert the length of latents ------------------#
         # Compute length prediction loss
         length_scores = self.compute_length_predictor_loss(prior_states, sampled_z, z_mask, y_mask)
         score_map.update(length_scores)
         # Padding z to fit target states
-        z_with_y_length = self.convert_length(sampled_z, z_mask, y_mask.sum(-1), order)
+        z_with_y_length = self.convert_length(sampled_z, z_mask, y_mask.sum(-1))
 
         # --------------------------  Decoder -------------------------------#
         decoder_states = self.decoder(z_with_y_length, y_mask, prior_states, x_mask)
