@@ -115,11 +115,15 @@ def main():
     ref_path = cfg["corpus"]["test"]["ref"]
     src_vocab_path = cfg["corpus"]["train"]["srcvocab"]
     tgt_vocab_path = cfg["corpus"]["train"]["tgtvocab"]
-    truncate_datapoints = cfg["hyperparam"].get("truncate_datapoints", None)
-    n_valid_per_epoch = cfg["hyperparam"].get("n_valid_per_epoch", 8)
-    training_warmsteps = cfg["hyperparam"].get("training_warmsteps", 4000)
-    training_maxsteps = cfg["hyperparam"].get("training_maxsteps", 100000)
+    truncate_datapoints = cfg["hyperparam"].get("truncate_datapoints", 1500000)
+    n_valid_per_epoch = cfg["hyperparam"].get("n_valid_per_epoch", 4)
+    training_warmsteps = cfg["hyperparam"].get("training_warmsteps", 8000)
+    training_maxsteps = cfg["hyperparam"].get("training_maxsteps", 50000)
     pretrained_autoregressive_path = cfg["hyperparam"].get("pretrained_autoregressive_path", None)
+    DATA_ROOT = cfg["exp_config"]["root_dir"]
+
+    OPTS.model_path = f"{DATA_ROOT}/lanmt.pt"
+    OPTS.result_path = f"{DATA_ROOT}/lanmt.result"
 
     if OPTS.longertrain:
         training_maxsteps = int(training_maxsteps * 1.5)
