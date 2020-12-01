@@ -189,7 +189,8 @@ class LANMTModel(Transformer):
         delta = logits.argmax(-1) - 50
         return delta
 
-    def reordering_z(self, z, order):
+    @staticmethod
+    def reordering_z(z, order):
         """
         Arranging the state z by order
         Args:
@@ -257,6 +258,9 @@ class LANMTModel(Transformer):
         sampled_z, q_prob = self.sample_from_Q(q_states)
 
         # -----------------  Reordering z -----------------------------------#
+        # reordering z of p(z|x)
+        prior_states = self.reordering_z(prior_states, order)
+        # reordering z of q(z|x,y)
         sampled_z = self.reordering_z(sampled_z, order)
 
         # -----------------  Convert the length of latents ------------------#
@@ -297,13 +301,14 @@ class LANMTModel(Transformer):
             import pdb;pdb.set_trace()
         return score_map
 
-    def translate(self, x, order=None, latent=None, prior_states=None, refine_step=0):
+    def translate(self, x, order, latent=None, prior_states=None, refine_step=0):
         """ Testing codes.
         """
         x_mask = self.to_float(torch.ne(x, 0))
         # Compute p(z|x)
         if prior_states is None:
             prior_states = self.prior_encoder(x, x_mask)
+            prior_states = self.reordering_z(prior_states, order)
         # Sample latent variables from prior if it's not given
         if latent is None:
             prior_prob = self.prior_prob_estimator(prior_states)
@@ -312,10 +317,12 @@ class LANMTModel(Transformer):
             else:
                 latent = self.bottleneck.sample_any_dist(prior_prob, samples=OPTS.Tcandidate_num, noise_level=0.5)
                 latent = self.latent2vector_nn(latent)
+            latent = self.reordering_z(latent, order)
+
         # Predict length
         length_delta = self.predict_length(prior_states, latent, x_mask)
         # Adjust the number of latent
-        converted_z, y_mask, y_lens = self.convert_length_with_delta(latent, x_mask, length_delta + 1, order)
+        converted_z, y_mask, y_lens = self.convert_length_with_delta(latent, x_mask, length_delta + 1)
         if converted_z.size(1) == 0:
             return None, latent, prior_prob.argmax(-1)
         # Run decoder to predict the target words
