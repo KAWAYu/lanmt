@@ -250,16 +250,14 @@ class LANMTModel(Transformer):
         # ----------- Compute prior and approximated posterior -------------#
         # Compute p(z|x)
         prior_states = self.prior_encoder(x, x_mask)
+        # reordering z of p(z|x)
+        prior_states = self.reordering_z(prior_states, order)
         prior_prob = self.prior_prob_estimator(prior_states)
         # Compute q(z|x,y) and sample z
         q_states = self.compute_Q_states(self.x_embed_layer(x), x_mask, y, y_mask)
         # Sample latent variables from q(z|x,y)
         z_mask = x_mask
         sampled_z, q_prob = self.sample_from_Q(q_states)
-
-        # -----------------  Reordering z -----------------------------------#
-        # reordering z of p(z|x)
-        prior_states = self.reordering_z(prior_states, order)
         # reordering z of q(z|x,y)
         sampled_z = self.reordering_z(sampled_z, order)
 
