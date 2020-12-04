@@ -241,6 +241,7 @@ class LANMTModel(Transformer):
     def forward(self, x, y, order=None, sampling=False, return_code=False):
         """Model training.
         """
+        assert order is not None
         score_map = {}
         x = x.t()
         y = y.t()

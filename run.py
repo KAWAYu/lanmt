@@ -252,7 +252,7 @@ def main():
                 ordl = torch.tensor([ordl])
                 if torch.cuda.is_available():
                     x = x.cuda()
-                    ordl.cuda()
+                    ordl = ordl.cuda()
                 start_time = time.time()
                 with torch.no_grad():
                     # Predict latent and target words from prior
