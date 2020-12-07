@@ -96,13 +96,15 @@ class LANMTModel(Transformer):
         # if self._fp16:
         #     self.half()
 
-    def compute_Q(self, x, y):
+    def compute_Q(self, x, y, order=None):
         """Compute the approximated posterior q(z|x,y) and sample from it.
         """
+        assert order is not None
         x_mask = self.to_float(torch.ne(x, 0))
         y_mask = self.to_float(torch.ne(y, 0))
         # Compute p(z|y,x) and sample z
         q_states = self.compute_Q_states(self.x_embed_layer(x), x_mask, y, y_mask)
+        q_states = self.reordering_z(q_states, order)
         sampled_latent, q_prob = self.sample_from_Q(q_states, sampling=False)
         return sampled_latent, q_prob
 
@@ -256,11 +258,11 @@ class LANMTModel(Transformer):
         prior_prob = self.prior_prob_estimator(prior_states)
         # Compute q(z|x,y) and sample z
         q_states = self.compute_Q_states(self.x_embed_layer(x), x_mask, y, y_mask)
+        # reordering z of q(z|x,y)
+        q_states = self.reordering_z(q_states, order)
         # Sample latent variables from q(z|x,y)
         z_mask = x_mask
         sampled_z, q_prob = self.sample_from_Q(q_states)
-        # reordering z of q(z|x,y)
-        sampled_z = self.reordering_z(sampled_z, order)
 
         # -----------------  Convert the length of latents ------------------#
         # Compute length prediction loss
@@ -308,7 +310,7 @@ class LANMTModel(Transformer):
         if prior_states is None:
             prior_states = self.prior_encoder(x, x_mask)
         prior_states = self.reordering_z(prior_states, order)
-        # Sample latent variables from prior if it's not given
+        # Sample latent variables from prior if it's not give
         if latent is None:
             prior_prob = self.prior_prob_estimator(prior_states)
             if not OPTS.Tlatent_search:
@@ -316,7 +318,6 @@ class LANMTModel(Transformer):
             else:
                 latent = self.bottleneck.sample_any_dist(prior_prob, samples=OPTS.Tcandidate_num, noise_level=0.5)
                 latent = self.latent2vector_nn(latent)
-        latent = self.reordering_z(latent, order)
 
         # Predict length
         length_delta = self.predict_length(prior_states, latent, x_mask)
