@@ -120,10 +120,6 @@ def main():
     training_warmsteps = cfg["hyperparam"].get("training_warmsteps", 8000)
     training_maxsteps = cfg["hyperparam"].get("training_maxsteps", 50000)
     pretrained_autoregressive_path = cfg["hyperparam"].get("pretrained_autoregressive_path", None)
-    DATA_ROOT = cfg["exp_config"]["root_dir"]
-
-    OPTS.model_path = f"{DATA_ROOT}/lanmt.pt"
-    OPTS.result_path = f"{DATA_ROOT}/lanmt.result"
 
     if OPTS.longertrain:
         training_maxsteps = int(training_maxsteps * 1.5)
