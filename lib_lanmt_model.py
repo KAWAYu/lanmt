@@ -53,7 +53,7 @@ class PositionalReEmbedding(nn.Module):
         if type(x) == int:
             length = x
         else:
-            length = x.shape[0]
+            length = x.shape[1]
         return Variable(self.pe[:, start:start + length], requires_grad=False)
 
 
@@ -71,15 +71,13 @@ class TransformerReorderingEmbedding(nn.Embedding):
         """
         Compute the embeddings with positional encoder
         Args:
-            x - input sequence ~ (batch, len) <- 多分間違い？
-            x - input sequence ~ (len, batch)
+            x - input sequence ~ (batch, len)
             start - the begining position (option)
             positional_encoding - whether using positional encoding
         """
         assert order is not None
         embed = super(TransformerReorderingEmbedding, self).forward(x)
         embed = embed * math.sqrt(self.embedding_dim)
-        print(embed.size())
         if positional_encoding:
             if embed.dim() == 2:
                 # Collapse one dimension of positional embedding
@@ -87,12 +85,10 @@ class TransformerReorderingEmbedding(nn.Embedding):
                 pos_embed = pos_embed.squeeze(1)
             else:
                 pos_embed = self.pos_layer(embed, start=start)
-            pos_embed = pos_embed.transpose(0, 1).repeat(1, x.size(1), 1)
             # バッチサイズ分の複製
-            order = order.T.unsqueeze(2).expand(pos_embed.size())
-            pos_embed = pos_embed.gather(dim=0, index=order)
+            order = order.unsqueeze(2).expand(x.size(0), x.size(1), embed.size(2))
+            pos_embed = pos_embed.repeat(x.size(0), 1, 1).gather(dim=1, index=order)
             embed += pos_embed
-            print(embed.size())
         return self.dropout(embed)
 
 
@@ -334,15 +330,16 @@ class LANMTModel(Transformer):
         """
         assert order is not None
         score_map = {}
-        x_mask = self.to_float(torch.ne(x, 0))
-        y_mask = self.to_float(torch.ne(y, 0))
+        tx, ty = x.t(), y.t()
+        x_mask = self.to_float(torch.ne(tx, 0))
+        y_mask = self.to_float(torch.ne(ty, 0))
 
         # ----------- Compute prior and approximated posterior -------------#
         # Compute p(z|x)
-        prior_states = self.prior_encoder(x, mask=x_mask, order=order)
+        prior_states = self.prior_encoder(tx, mask=x_mask, order=order)
         prior_prob = self.prior_prob_estimator(prior_states)
         # Compute q(z|x,y) and sample z
-        q_states = self.compute_Q_states(self.x_embed_layer(x, order=order), x_mask, y, y_mask)
+        q_states = self.compute_Q_states(self.x_embed_layer(tx, order=order), x_mask, ty, y_mask)
         # Sample latent variables from q(z|x,y)
         z_mask = x_mask
         sampled_z, q_prob = self.sample_from_Q(q_states)
@@ -362,7 +359,7 @@ class LANMTModel(Transformer):
         denom = x.shape[0]
         if self._shard_size is not None and self._shard_size > 0:
             loss_scores, decoder_tensors, decoder_grads = self.compute_shard_loss(
-                decoder_outputs, y, y_mask, denominator=denom, ignore_first_token=False, backward=False
+                decoder_outputs, ty, y_mask, denominator=denom, ignore_first_token=False, backward=False
             )
             loss_scores["word_acc"] *= float(y_mask.shape[0]) / self.to_float(y_mask.sum())
             score_map.update(loss_scores)
@@ -374,7 +371,7 @@ class LANMTModel(Transformer):
         if not torch.is_grad_enabled() and self.training_criteria == "BLEU":
             logits = self.expander_nn(decoder_outputs["final_states"])
             predictions = logits.argmax(-1)
-            score_map["BLEU"] = - self.get_BLEU(predictions, y)
+            score_map["BLEU"] = - self.get_BLEU(predictions, ty)
 
         # --------------------------  Bacprop gradient --------------------#
         if self._shard_size is not None and self._shard_size > 0 and decoder_tensors is not None:
