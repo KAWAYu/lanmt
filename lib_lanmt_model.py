@@ -27,36 +27,6 @@ from lib_lanmt_modules import LengthConverter
 from lib_vae import VAEBottleneck
 
 
-class PositionalReEmbedding(nn.Module):
-    """
-    This function is stealed from The Annotated Transformer (same as openNMT implementation).
-    http://nlp.seas.harvard.edu/2018/04/03/attention.html#embeddings-and-softmax
-    """
-
-    def __init__(self, size, max_len=5000):
-        super(PositionalReEmbedding, self).__init__()
-        pe = torch.zeros(max_len, size)
-        position = torch.arange(0, max_len).unsqueeze(1).float()
-        div_term = torch.exp((torch.arange(0, size, 2).float() *
-                              -(math.log(10000.0) / size)).float())
-        pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)
-        pe = pe.unsqueeze(0)
-        self.register_buffer('pe', pe)
-
-    def forward(self, x, start=None):
-        """
-        Return 3d tensor with shape (1, len, size).
-        """
-        if start is None:
-            start = 0
-        if type(x) == int:
-            length = x
-        else:
-            length = x.shape[1]
-        return Variable(self.pe[:, start:start + length], requires_grad=False)
-
-
 class TransformerReorderingEmbedding(nn.Embedding):
     """
     Rescale the embeddings.
@@ -64,7 +34,7 @@ class TransformerReorderingEmbedding(nn.Embedding):
 
     def __init__(self, num_embeddings, embedding_dim, dropout_ratio=0.1):
         super(TransformerReorderingEmbedding, self).__init__(num_embeddings, embedding_dim)
-        self.pos_layer = PositionalReEmbedding(embedding_dim)
+        self.pos_layer = PositionalEmbedding(embedding_dim)
         self.dropout = nn.Dropout(dropout_ratio)
 
     def forward(self, x, order=None, start=None, positional_encoding=True):
@@ -87,8 +57,8 @@ class TransformerReorderingEmbedding(nn.Embedding):
                 pos_embed = self.pos_layer(embed, start=start)
             # バッチサイズ分の複製
             order = order.unsqueeze(2).expand(x.size(0), x.size(1), embed.size(2))
-            pos_embed = pos_embed.repeat(x.size(0), 1, 1).gather(dim=1, index=order)
-            embed += pos_embed
+            reordered_pos_embed = pos_embed.repeat(x.size(0), 1, 1).gather(dim=1, index=order)
+            embed += pos_embed + reordered_pos_embed
         return self.dropout(embed)
 
 
