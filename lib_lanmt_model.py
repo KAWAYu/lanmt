@@ -10,11 +10,13 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.autograd import Variable
 
 from nmtlab.models.transformer import Transformer
 from nmtlab.modules.transformer_modules import TransformerEmbedding
 from nmtlab.modules.transformer_modules import PositionalEmbedding
 from nmtlab.modules.transformer_modules import LabelSmoothingKLDivLoss
+from nmtlab.modules.transformer_modules import TransformerEncoderLayer
 from nmtlab.utils import OPTS
 from nmtlab.utils import TensorMap
 from nmtlab.utils import smoothed_bleu
@@ -23,6 +25,107 @@ from lib_lanmt_modules import TransformerEncoder
 from lib_lanmt_modules import TransformerCrossEncoder
 from lib_lanmt_modules import LengthConverter
 from lib_vae import VAEBottleneck
+
+
+class PositionalReEmbedding(nn.Module):
+    """
+    This function is stealed from The Annotated Transformer (same as openNMT implementation).
+    http://nlp.seas.harvard.edu/2018/04/03/attention.html#embeddings-and-softmax
+    """
+
+    def __init__(self, size, max_len=5000):
+        super(PositionalReEmbedding, self).__init__()
+        pe = torch.zeros(max_len, size)
+        position = torch.arange(0, max_len).unsqueeze(1).float()
+        div_term = torch.exp((torch.arange(0, size, 2).float() *
+                              -(math.log(10000.0) / size)).float())
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        pe = pe.unsqueeze(0)
+        self.register_buffer('pe', pe)
+
+    def forward(self, x, start=None):
+        """
+        Return 3d tensor with shape (1, len, size).
+        """
+        if start is None:
+            start = 0
+        if type(x) == int:
+            length = x
+        else:
+            length = x.shape[0]
+        return Variable(self.pe[:, start:start + length], requires_grad=False)
+
+
+class TransformerReorderingEmbedding(nn.Embedding):
+    """
+    Rescale the embeddings.
+    """
+
+    def __init__(self, num_embeddings, embedding_dim, dropout_ratio=0.1):
+        super(TransformerReorderingEmbedding, self).__init__(num_embeddings, embedding_dim)
+        self.pos_layer = PositionalReEmbedding(embedding_dim)
+        self.dropout = nn.Dropout(dropout_ratio)
+
+    def forward(self, x, order=None, start=None, positional_encoding=True):
+        """
+        Compute the embeddings with positional encoder
+        Args:
+            x - input sequence ~ (batch, len) <- 多分間違い？
+            x - input sequence ~ (len, batch)
+            start - the begining position (option)
+            positional_encoding - whether using positional encoding
+        """
+        assert order is not None
+        embed = super(TransformerReorderingEmbedding, self).forward(x)
+        embed = embed * math.sqrt(self.embedding_dim)
+        print(embed.size())
+        if positional_encoding:
+            if embed.dim() == 2:
+                # Collapse one dimension of positional embedding
+                pos_embed = self.pos_layer(embed.unsqueeze(1), start=start)
+                pos_embed = pos_embed.squeeze(1)
+            else:
+                pos_embed = self.pos_layer(embed, start=start)
+            pos_embed = pos_embed.transpose(0, 1).repeat(1, x.size(1), 1)
+            # バッチサイズ分の複製
+            order = order.T.unsqueeze(2).expand(pos_embed.size())
+            pos_embed = pos_embed.gather(dim=0, index=order)
+            embed += pos_embed
+            print(embed.size())
+        return self.dropout(embed)
+
+
+class TransformerReorderingEncoder(nn.Module):
+    """
+    Self-attention -> FF -> layer norm
+    """
+
+    def __init__(self, embed_layer, size, n_layers, ff_size=None, n_att_head=8, dropout_ratio=0.1, skip_connect=False):
+        super(TransformerReorderingEncoder, self).__init__()
+        if ff_size is None:
+            ff_size = size * 4
+        self.embed_layer = embed_layer
+        self.layer_norm = nn.LayerNorm(size)
+        self.encoder_layers = nn.ModuleList()
+        self.skip_connect = skip_connect
+        self._rescale = 1. / math.sqrt(2)
+        for _ in range(n_layers):
+            layer = TransformerEncoderLayer(size, ff_size, n_att_head=n_att_head,
+                                            dropout_ratio=dropout_ratio)
+            self.encoder_layers.append(layer)
+
+    def forward(self, x, order=None, mask=None):
+        assert order is not None
+        if self.embed_layer is not None:
+            x = self.embed_layer(x, order=order)
+        first_x = x
+        for l, layer in enumerate(self.encoder_layers):
+            x = layer(x, mask)
+            if self.skip_connect:
+                x = self._rescale * (first_x + x)
+        x = self.layer_norm(x)
+        return x
 
 
 class LANMTModel(Transformer):
@@ -65,14 +168,14 @@ class LANMTModel(Transformer):
         """Define the modules
         """
         # Embedding layers
-        self.x_embed_layer = TransformerEmbedding(self._src_vocab_size, self.embed_size)
+        self.x_embed_layer = TransformerReorderingEmbedding(self._src_vocab_size, self.embed_size)
         self.y_embed_layer = TransformerEmbedding(self._tgt_vocab_size, self.embed_size)
         self.pos_embed_layer = PositionalEmbedding(self.hidden_size)
         # Length Transformation
         self.length_converter = LengthConverter()
         self.length_embed_layer = nn.Embedding(500, self.hidden_size)
         # Prior p(z|x)
-        self.prior_encoder = TransformerEncoder(self.x_embed_layer, self.hidden_size, self.prior_layers)
+        self.prior_encoder = TransformerReorderingEncoder(self.x_embed_layer, self.hidden_size, self.prior_layers)
         self.prior_prob_estimator = nn.Linear(self.hidden_size, self.latent_dim * 2)
         # Approximator q(z|x,y)
         self.q_encoder_y = TransformerEncoder(self.y_embed_layer, self.hidden_size, self.q_layers)
@@ -96,13 +199,13 @@ class LANMTModel(Transformer):
         # if self._fp16:
         #     self.half()
 
-    def compute_Q(self, x, y):
+    def compute_Q(self, x, y, order):
         """Compute the approximated posterior q(z|x,y) and sample from it.
         """
         x_mask = self.to_float(torch.ne(x, 0))
         y_mask = self.to_float(torch.ne(y, 0))
         # Compute p(z|y,x) and sample z
-        q_states = self.compute_Q_states(self.x_embed_layer(x), x_mask, y, y_mask)
+        q_states = self.compute_Q_states(self.x_embed_layer(x, order=order), x_mask, y, y_mask)
         sampled_latent, q_prob = self.sample_from_Q(q_states, sampling=False)
         return sampled_latent, q_prob
 
@@ -226,19 +329,20 @@ class LANMTModel(Transformer):
         score_map["loss"] = remain_loss + score_map["nll"]
         return score_map, remain_loss
 
-    def forward(self, x, y, sampling=False, return_code=False):
+    def forward(self, x, y, order=None, sampling=False, return_code=False):
         """Model training.
         """
+        assert order is not None
         score_map = {}
         x_mask = self.to_float(torch.ne(x, 0))
         y_mask = self.to_float(torch.ne(y, 0))
 
         # ----------- Compute prior and approximated posterior -------------#
         # Compute p(z|x)
-        prior_states = self.prior_encoder(x, x_mask)
+        prior_states = self.prior_encoder(x, mask=x_mask, order=order)
         prior_prob = self.prior_prob_estimator(prior_states)
         # Compute q(z|x,y) and sample z
-        q_states = self.compute_Q_states(self.x_embed_layer(x), x_mask, y, y_mask)
+        q_states = self.compute_Q_states(self.x_embed_layer(x, order=order), x_mask, y, y_mask)
         # Sample latent variables from q(z|x,y)
         z_mask = x_mask
         sampled_z, q_prob = self.sample_from_Q(q_states)
@@ -281,13 +385,13 @@ class LANMTModel(Transformer):
             import pdb;pdb.set_trace()
         return score_map
 
-    def translate(self, x, latent=None, prior_states=None, refine_step=0):
+    def translate(self, x, order, latent=None, prior_states=None, refine_step=0):
         """ Testing codes.
         """
         x_mask = self.to_float(torch.ne(x, 0))
         # Compute p(z|x)
         if prior_states is None:
-            prior_states = self.prior_encoder(x, x_mask)
+            prior_states = self.prior_encoder(x, mask=x_mask, order=order)
         # Sample latent variables from prior if it's not given
         if latent is None:
             prior_prob = self.prior_prob_estimator(prior_states)

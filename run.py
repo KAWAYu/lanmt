@@ -16,7 +16,8 @@ from torch import optim
 sys.path.append(".")
 
 import nmtlab
-from nmtlab import MTTrainer, MTDataset
+from nmtlab import MTTrainer  # , MTDataset
+from reordering_mt_dataset import MTDataset
 from nmtlab.utils import OPTS, Vocab
 from nmtlab.schedulers import TransformerScheduler, SimpleScheduler
 from nmtlab.utils import is_root_node
@@ -107,11 +108,14 @@ def main():
 
     train_src_corpus = cfg["corpus"]["train"]["src"]
     train_tgt_corpus = cfg["corpus"]["train"]["tgt"]
+    train_order_corpus = cfg["corpus"]["train"]["order"]
     valid_src_corpus = cfg["corpus"]["valid"]["src"]
     valid_tgt_corpus = cfg["corpus"]["valid"]["tgt"]
+    valid_order_corpus = cfg["corpus"]["valid"]["order"]
     distilled_tgt_corpus = cfg["corpus"]["train"]["tgt"]
     test_src_corpus = cfg["corpus"]["test"]["src"]
-    test_tgt_corpus = cfg["corpus"]["test"]["src"]
+    test_tgt_corpus = cfg["corpus"]["test"]["tgt"]
+    test_order_corpus = cfg["corpus"]["test"]["order"]
     ref_path = cfg["corpus"]["test"]["ref"]
     src_vocab_path = cfg["corpus"]["train"]["srcvocab"]
     tgt_vocab_path = cfg["corpus"]["train"]["tgtvocab"]
@@ -140,7 +144,7 @@ def main():
     n_valid_samples = 5000 if OPTS.finetune else 500
     if OPTS.train:
         dataset = MTDataset(
-            src_corpus=train_src_corpus, tgt_corpus=tgt_corpus,
+            src_corpus=train_src_corpus, tgt_corpus=tgt_corpus, reordering_position=train_order_corpus,
             src_vocab=src_vocab_path, tgt_vocab=tgt_vocab_path,
             batch_size=OPTS.batchtokens * gpu_num, batch_type="token",
             truncate=truncate_datapoints, max_length=TRAINING_MAX_TOKENS,
