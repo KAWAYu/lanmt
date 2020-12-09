@@ -238,26 +238,31 @@ def main():
         result_path = OPTS.result_path
         # Read data
         lines = open(test_src_corpus).readlines()
+        orders = open(test_order_corpus).readlines()
         latent_candidate_num = OPTS.Tcandidate_num if OPTS.Tlatent_search else None
         decode_times = []
         with open(OPTS.result_path, "w") as outf:
-            for i, line in enumerate(lines):
+            for i, (line, ordl) in enumerate(zip(lines, orders)):
                 # Make a batch
                 tokens = src_vocab.encode("<s> {} </s>".format(line.strip()).split())
+                ordl = [0] + [i for i in range(1, len(ordl.strip().split()) + 1)]
+                ordl.append(len(ordl))
                 x = torch.tensor([tokens])
+                ordl = torch.tensor([ordl])
                 if torch.cuda.is_available():
                     x = x.cuda()
+                    ordl = ordl.cuda()
                 start_time = time.time()
                 with torch.no_grad():
                     # Predict latent and target words from prior
-                    targets, _, prior_states = nmt.translate(x)
+                    targets, _, prior_states = nmt.translate(x, order=ordl)
                     target_tokens = targets.cpu().numpy()[0].tolist()
                     # Interative inference
                     for infer_step in range(OPTS.Trefine_steps):
                         # Sample latent from Q and draw a new target prediction
                         prev_target = tuple(target_tokens)
-                        new_latent, _ = nmt.compute_Q(x, targets)
-                        targets, _, _ = nmt.translate(x, latent=new_latent, prior_states=prior_states,
+                        new_latent, _ = nmt.compute_Q(x, targets, order=ordl)
+                        targets, _, _ = nmt.translate(x, order=ordl, latent=new_latent, prior_states=prior_states,
                                                       refine_step=infer_step + 1)
                         target_tokens = targets[0].cpu().numpy().tolist()
                         # Early stopping
