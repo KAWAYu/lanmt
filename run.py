@@ -28,7 +28,6 @@ import yaml
 
 from lib_lanmt_model import LANMTModel
 from lib_rescoring import load_rescoring_transformer
-from datasets import get_dataset_paths
 
 
 def main():
