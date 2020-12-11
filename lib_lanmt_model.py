@@ -58,7 +58,7 @@ class TransformerReorderingEmbedding(nn.Embedding):
             # バッチサイズ分の複製
             order = order.unsqueeze(2).expand(x.size(0), x.size(1), embed.size(2))
             reordered_pos_embed = pos_embed.repeat(x.size(0), 1, 1).gather(dim=1, index=order)
-            embed += pos_embed + reordered_pos_embed
+            embed += reordered_pos_embed
         return self.dropout(embed)
 
 
@@ -172,6 +172,7 @@ class LANMTModel(Transformer):
         y_mask = self.to_float(torch.ne(y, 0))
         # Compute p(z|y,x) and sample z
         q_states = self.compute_Q_states(self.x_embed_layer(x, order=order), x_mask, y, y_mask)
+        q_states = self.reordering_z(q_states, order)
         sampled_latent, q_prob = self.sample_from_Q(q_states, sampling=False)
         return sampled_latent, q_prob
 
@@ -261,6 +262,18 @@ class LANMTModel(Transformer):
         delta = logits.argmax(-1) - 50
         return delta
 
+    @staticmethod
+    def reordering_z(z, order):
+        """
+        Arranging the state z by order
+        Args:
+            z - latent variables, shape: B x L_x x hidden
+            order - index, shape: B x L_x
+        """
+        assert z.size(0) == order.size(0) and z.size(1) == order.size(1)
+        order_expand = order.unsqueeze(2).expand(z.size())
+        return z.gather(dim=1, index=order_expand)
+
     def compute_final_loss(self, q_prob, prior_prob, x_mask, score_map):
         """ Compute the report the loss.
         """
@@ -310,9 +323,11 @@ class LANMTModel(Transformer):
         # ----------- Compute prior and approximated posterior -------------#
         # Compute p(z|x)
         prior_states = self.prior_encoder(tx, mask=x_mask, order=order)
+        prior_states = self.reordering_z(prior_states, order)
         prior_prob = self.prior_prob_estimator(prior_states)
         # Compute q(z|x,y) and sample z
         q_states = self.compute_Q_states(self.x_embed_layer(tx, order=order), x_mask, ty, y_mask)
+        q_states = self.reordering_z(q_states, order)
         # Sample latent variables from q(z|x,y)
         z_mask = x_mask
         sampled_z, q_prob = self.sample_from_Q(q_states)
@@ -362,6 +377,7 @@ class LANMTModel(Transformer):
         # Compute p(z|x)
         if prior_states is None:
             prior_states = self.prior_encoder(x, mask=x_mask, order=order)
+            prior_states = self.reordering_z(prior_states, order)
         # Sample latent variables from prior if it's not given
         if latent is None:
             prior_prob = self.prior_prob_estimator(prior_states)
