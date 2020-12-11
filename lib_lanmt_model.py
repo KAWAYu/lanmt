@@ -132,9 +132,12 @@ class LANMTModel(Transformer):
         logits = self.length_predictor(mean_z)
         length_loss = F.cross_entropy(logits, delta, reduction="mean")
         length_acc = self.to_float(logits.argmax(-1) == delta).mean()
+        length_diff = (logits.argmax(-1) - delta).abs().float()
         length_scores = {
             "len_loss": length_loss,
-            "len_acc": length_acc
+            "len_acc": length_acc,
+            "len_diff(avg)": length_diff.mean(),
+            "len_diff(std)": length_diff.std(),
         }
         return length_scores
 
