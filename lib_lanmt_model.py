@@ -270,7 +270,11 @@ class LANMTModel(Transformer):
             z - latent variables, shape: B x L_x x hidden
             order - index, shape: B x L_x
         """
-        assert z.size(0) == order.size(0) and z.size(1) == order.size(1)
+        if z.size(0) == order.size(0) and z.size(1) == order.size(1):
+            pass
+        else:
+            order = order.expand(z.size(0), order.size(1))
+
         order_expand = order.unsqueeze(2).expand(z.size())
         return z.gather(dim=1, index=order_expand)
 
