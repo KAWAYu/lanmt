@@ -245,7 +245,7 @@ def main():
             for i, (line, ordl) in enumerate(zip(lines, orders)):
                 # Make a batch
                 tokens = src_vocab.encode("<s> {} </s>".format(line.strip()).split())
-                ordl = [0] + [i for i in range(1, len(ordl.strip().split()) + 1)]
+                ordl = [0] + list(map(lambda xi: int(xi) + 1, ordl.strip().split()))
                 ordl.append(len(ordl))
                 x = torch.tensor([tokens])
                 ordl = torch.tensor([ordl])
