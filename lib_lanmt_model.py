@@ -134,9 +134,12 @@ class LANMTModel(Transformer):
         logits = self.length_predictor(mean_z)
         length_loss = F.cross_entropy(logits, delta, reduction="mean")
         length_acc = self.to_float(logits.argmax(-1) == delta).mean()
+        length_diff = (logits.argmax(-1) - delta).abs().float()
         length_scores = {
             "len_loss": length_loss,
-            "len_acc": length_acc
+            "len_acc": length_acc,
+            "len_diff(avg)": length_diff.mean(),
+            "len_diff(std)": length_diff.std(),
         }
         return length_scores
 
@@ -199,7 +202,11 @@ class LANMTModel(Transformer):
             z - latent variables, shape: B x L_x x hidden
             order - index, shape: B x L_x
         """
-        assert z.size(0) == order.size(0) and z.size(1) == order.size(1)
+        if z.size(0) == order.size(0) and z.size(1) == order.size(1):
+            pass
+        else:
+            order = order.expand(z.size(0), order.size(1))
+
         order_expand = order.unsqueeze(2).expand(z.size())
         return z.gather(dim=1, index=order_expand)
 
@@ -253,12 +260,10 @@ class LANMTModel(Transformer):
         # ----------- Compute prior and approximated posterior -------------#
         # Compute p(z|x)
         prior_states = self.prior_encoder(x, x_mask)
-        # reordering z of p(z|x)
         prior_states = self.reordering_z(prior_states, order)
         prior_prob = self.prior_prob_estimator(prior_states)
         # Compute q(z|x,y) and sample z
         q_states = self.compute_Q_states(self.x_embed_layer(x), x_mask, y, y_mask)
-        # reordering z of q(z|x,y)
         q_states = self.reordering_z(q_states, order)
         # Sample latent variables from q(z|x,y)
         z_mask = x_mask
@@ -309,7 +314,7 @@ class LANMTModel(Transformer):
         # Compute p(z|x)
         if prior_states is None:
             prior_states = self.prior_encoder(x, x_mask)
-        prior_states = self.reordering_z(prior_states, order)
+            prior_states = self.reordering_z(prior_states, order)
         # Sample latent variables from prior if it's not give
         if latent is None:
             prior_prob = self.prior_prob_estimator(prior_states)
@@ -318,7 +323,6 @@ class LANMTModel(Transformer):
             else:
                 latent = self.bottleneck.sample_any_dist(prior_prob, samples=OPTS.Tcandidate_num, noise_level=0.5)
                 latent = self.latent2vector_nn(latent)
-
         # Predict length
         length_delta = self.predict_length(prior_states, latent, x_mask)
         # Adjust the number of latent

@@ -14,10 +14,17 @@ from nmtlab.dataset.base import Dataset
 from nmtlab.dataset.fixed_iterator import FixedBucketIterator
 
 
-class OrderField(torchtext.data.RawField):
+class OrderIndexField(torchtext.data.RawField):
+    # 各 index の位置
     def process(self, batch, device=None, **kwargs):
-        # <s> に合わせるために [0] 追加と index をそれぞれ +1、</s> に合わせるために後ろに index を追加
-        xlist = [[0] + list(map(lambda xi: int(xi) + 1, _x.strip().split())) for _x in batch]
+        xlist = []
+        for xs in batch:
+            revi = {0: 0}
+            revi.update({int(xi) + 1: i for i, xi in enumerate(xs.strip().split(), 1)})
+            tmp = []
+            for i in range(len(revi)):
+                tmp.append(revi[i])
+            xlist.append(tmp)
         max_len = max(len(_x) for _x in xlist)
         xbatch = [_x + [l for l in range(len(_x), max_len + 1)] for _x in xlist]
         xbatch = torch.LongTensor(xbatch).to(device)
@@ -45,7 +52,7 @@ class MTDataset(Dataset):
         self._src_vocab = self._src_field.vocab = Vocab(src_vocab)
         self._tgt_field = torchtext.data.Field(pad_token="<null>", preprocessing=lambda seq: ["<s>"] + seq + ["</s>"])
         self._tgt_vocab = self._tgt_field.vocab = Vocab(tgt_vocab)
-        self._reordering_position_field = OrderField()
+        self._reordering_position_field = OrderIndexField()
         # Make data
         if corpus_path is not None:
             self._data = torchtext.data.TabularDataset(
