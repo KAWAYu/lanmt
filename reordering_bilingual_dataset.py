@@ -11,17 +11,19 @@ from torchtext.data import Dataset
 class ReorderingBilingualDataset(Dataset):
 
     def __init__(self, src_path, tgt_path, reorder_path,
-                 src_field, tgt_field, reorder_field, **kwargs):
+                 src_field, tgt_field, reorder_field, reorder_index_field, **kwargs):
         fields = {
             "src": ("src", src_field),
             "tgt": ("tgt", tgt_field),
-            "order": ("order", reorder_field)
+            "order": ("order", reorder_field),
+            "order_idx": ("order_idx", reorder_index_field),
         }
         examples = []
         for src, tgt, reorder in zip(open(src_path, encoding="utf-8"), open(tgt_path, encoding="utf-8"),
                                      open(reorder_path, encoding="utf-8")):
             example = Example.fromdict(
-                {"src": src.strip(), "tgt": tgt.strip(), "order": reorder.strip()},
+                {"src": src.strip(), "tgt": tgt.strip(),
+                 "order": reorder.strip(), "order_idx": reorder.strip()},
                 fields
             )
             examples.append(example)

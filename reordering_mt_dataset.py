@@ -14,9 +14,27 @@ from nmtlab.dataset.fixed_iterator import FixedBucketIterator
 
 
 class OrderField(torchtext.data.RawField):
+    # 普通に index を読み込むためのクラス
     def process(self, batch, device=None, **kwargs):
         # <s> に合わせるために [0] 追加と index をそれぞれ +1、</s> に合わせるために後ろに index を追加
         xlist = [[0] + list(map(lambda xi: int(xi) + 1, _x.strip().split())) for _x in batch]
+        max_len = max(len(_x) for _x in xlist)
+        xbatch = [_x + [l for l in range(len(_x), max_len + 1)] for _x in xlist]
+        xbatch = torch.LongTensor(xbatch).to(device)
+        return xbatch
+
+
+class OrderIndexField(torchtext.data.RawField):
+    # 各 index の位置
+    def process(self, batch, device=None, **kwargs):
+        xlist = []
+        for xs in batch:
+            revi = {0: 0}
+            revi.update({int(xi) + 1: i for i, xi in enumerate(xs.strip().split(), 1)})
+            tmp = []
+            for i in range(len(revi)):
+                tmp.append(revi[i])
+            xlist.append(tmp)
         max_len = max(len(_x) for _x in xlist)
         xbatch = [_x + [l for l in range(len(_x), max_len + 1)] for _x in xlist]
         xbatch = torch.LongTensor(xbatch).to(device)
@@ -45,6 +63,7 @@ class MTDataset(Dataset):
         self._tgt_field = torchtext.data.Field(pad_token="<null>", preprocessing=lambda seq: ["<s>"] + seq + ["</s>"])
         self._tgt_vocab = self._tgt_field.vocab = Vocab(tgt_vocab)
         self._reordering_position_field = OrderField()
+        self._reordering_position_index_field = OrderIndexField()
         # Make data
         if corpus_path is not None:
             self._data = torchtext.data.TabularDataset(
@@ -55,7 +74,8 @@ class MTDataset(Dataset):
         else:
             self._data = ReorderingBilingualDataset(
                 src_corpus, tgt_corpus, reordering_position,
-                self._src_field, self._tgt_field, self._reordering_position_field, filter_pred=self._len_filter)
+                self._src_field, self._tgt_field,
+                self._reordering_position_field, self._reordering_position_index_field, filter_pred=self._len_filter)
         # Create training and valid dataset
         examples = self._data.examples
         if truncate is not None:
@@ -73,12 +93,14 @@ class MTDataset(Dataset):
         # Create data
         valid_data = torchtext.data.Dataset(
             valid_examples,
-            fields=[('src', self._src_field), ('tgt', self._tgt_field), ('order', self._reordering_position_field)],
+            fields=[('src', self._src_field), ('tgt', self._tgt_field),
+                    ('order', self._reordering_position_field), ('order_idx', self._reordering_position_index_field)],
             filter_pred=self._len_filter
         )
         train_data = torchtext.data.Dataset(
             train_examples,
-            fields=[('src', self._src_field), ('tgt', self._tgt_field), ('order', self._reordering_position_field)],
+            fields=[('src', self._src_field), ('tgt', self._tgt_field),
+                    ('order', self._reordering_position_field), ('order_idx', self._reordering_position_index_field)],
             filter_pred=self._len_filter
         )
         if batch_type == "token":
@@ -99,7 +121,8 @@ class MTDataset(Dataset):
         else:
             data = ReorderingBilingualDataset(
                 src_corpus, tgt_corpus, reorder_corpus,
-                self._src_field, self._tgt_field, self._reordering_position_field, filter_pred=self._len_filter)
+                self._src_field, self._tgt_field,
+                self._reordering_position_field, self._reordering_position_index_field, filter_pred=self._len_filter)
         examples = data.examples
         # if self._batch_type == "token":
         #     examples.sort(key=lambda ex: len(ex.src))

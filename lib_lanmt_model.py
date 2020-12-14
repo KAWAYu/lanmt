@@ -315,10 +315,10 @@ class LANMTModel(Transformer):
         score_map["loss"] = remain_loss + score_map["nll"]
         return score_map, remain_loss
 
-    def forward(self, x, y, order=None, sampling=False, return_code=False):
+    def forward(self, x, y, order=None, order_idx=None, sampling=False, return_code=False):
         """Model training.
         """
-        assert order is not None
+        assert order is not None or order_idx is not None
         score_map = {}
         tx, ty = x.t(), y.t()
         x_mask = self.to_float(torch.ne(tx, 0))
@@ -327,11 +327,11 @@ class LANMTModel(Transformer):
         # ----------- Compute prior and approximated posterior -------------#
         # Compute p(z|x)
         prior_states = self.prior_encoder(tx, mask=x_mask, order=order)
-        prior_states = self.reordering_z(prior_states, order)
+        prior_states = self.reordering_z(prior_states, order_idx)
         prior_prob = self.prior_prob_estimator(prior_states)
         # Compute q(z|x,y) and sample z
         q_states = self.compute_Q_states(self.x_embed_layer(tx, order=order), x_mask, ty, y_mask)
-        q_states = self.reordering_z(q_states, order)
+        q_states = self.reordering_z(q_states, order_idx)
         # Sample latent variables from q(z|x,y)
         z_mask = x_mask
         sampled_z, q_prob = self.sample_from_Q(q_states)
@@ -374,14 +374,14 @@ class LANMTModel(Transformer):
             import pdb;pdb.set_trace()
         return score_map
 
-    def translate(self, x, order, latent=None, prior_states=None, refine_step=0):
+    def translate(self, x, order, order_idx, latent=None, prior_states=None, refine_step=0):
         """ Testing codes.
         """
         x_mask = self.to_float(torch.ne(x, 0))
         # Compute p(z|x)
         if prior_states is None:
             prior_states = self.prior_encoder(x, mask=x_mask, order=order)
-            prior_states = self.reordering_z(prior_states, order)
+            prior_states = self.reordering_z(prior_states, order_idx)
         # Sample latent variables from prior if it's not given
         if latent is None:
             prior_prob = self.prior_prob_estimator(prior_states)
