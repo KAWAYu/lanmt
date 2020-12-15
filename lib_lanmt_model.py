@@ -165,14 +165,14 @@ class LANMTModel(Transformer):
         # if self._fp16:
         #     self.half()
 
-    def compute_Q(self, x, y, order):
+    def compute_Q(self, x, y, order, order_idx):
         """Compute the approximated posterior q(z|x,y) and sample from it.
         """
         x_mask = self.to_float(torch.ne(x, 0))
         y_mask = self.to_float(torch.ne(y, 0))
         # Compute p(z|y,x) and sample z
         q_states = self.compute_Q_states(self.x_embed_layer(x, order=order), x_mask, y, y_mask)
-        q_states = self.reordering_z(q_states, order)
+        q_states = self.reordering_z(q_states, order_idx)
         sampled_latent, q_prob = self.sample_from_Q(q_states, sampling=False)
         return sampled_latent, q_prob
 
@@ -318,7 +318,7 @@ class LANMTModel(Transformer):
     def forward(self, x, y, order=None, order_idx=None, sampling=False, return_code=False):
         """Model training.
         """
-        assert order is not None or order_idx is not None
+        assert order is not None and order_idx is not None
         score_map = {}
         tx, ty = x.t(), y.t()
         x_mask = self.to_float(torch.ne(tx, 0))

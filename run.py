@@ -267,7 +267,7 @@ def main():
                     for infer_step in range(OPTS.Trefine_steps):
                         # Sample latent from Q and draw a new target prediction
                         prev_target = tuple(target_tokens)
-                        new_latent, _ = nmt.compute_Q(x, targets, order=ordl)
+                        new_latent, _ = nmt.compute_Q(x, targets, order=ordl, order_idx=ord_idx)
                         targets, _, _ = nmt.translate(x, order=ordl, order_idx=ord_idx,
                                                       latent=new_latent, prior_states=prior_states,
                                                       refine_step=infer_step + 1)
