@@ -311,7 +311,7 @@ class LANMTModel(Transformer):
         prior_states = self.prior_encoder(tx, mask=x_mask, order=order)
         prior_prob = self.prior_prob_estimator(prior_states)
         # Compute q(z|x,y) and sample z
-        q_states = self.compute_Q_states(self.x_embed_layer(x, order=order), x_mask, ty, y_mask)
+        q_states = self.compute_Q_states(self.x_embed_layer(tx, order=order), x_mask, ty, y_mask)
         # Sample latent variables from q(z|x,y)
         z_mask = x_mask
         sampled_z, q_prob = self.sample_from_Q(q_states)
