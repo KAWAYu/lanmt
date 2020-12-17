@@ -246,22 +246,26 @@ def main():
                 tokens = src_vocab.encode("<s> {} </s>".format(line.strip()).split())
                 ordl = [0] + list(map(lambda xi: int(xi) + 1, ordl.strip().split()))
                 ordl.append(len(ordl))
+                ord_dict = {x: i for i, x in enumerate(ordl)}
+                ord_idx = []
+                for j in range(len(ord_dict)):
+                    ord_idx.append(ord_dict[j])
                 x = torch.tensor([tokens])
-                ordl = torch.tensor([ordl])
+                ord_idx = torch.tensor([ord_idx])
                 if torch.cuda.is_available():
                     x = x.cuda()
-                    ordl = ordl.cuda()
+                    ord_idx = ord_idx.cuda()
                 start_time = time.time()
                 with torch.no_grad():
                     # Predict latent and target words from prior
-                    targets, _, prior_states = nmt.translate(x, ordl)
+                    targets, _, prior_states = nmt.translate(x, ord_idx)
                     target_tokens = targets.cpu().numpy()[0].tolist()
                     # Interative inference
                     for infer_step in range(OPTS.Trefine_steps):
                         # Sample latent from Q and draw a new target prediction
                         prev_target = tuple(target_tokens)
-                        new_latent, _ = nmt.compute_Q(x, targets)
-                        targets, _, _ = nmt.translate(x, ordl, latent=new_latent, prior_states=prior_states,
+                        new_latent, _ = nmt.compute_Q(x, targets, ord_idx)
+                        targets, _, _ = nmt.translate(x, ord_idx, latent=new_latent, prior_states=prior_states,
                                                       refine_step=infer_step + 1)
                         target_tokens = targets[0].cpu().numpy().tolist()
                         # Early stopping

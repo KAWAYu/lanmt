@@ -164,13 +164,13 @@ class LANMTModel(Transformer):
         # if self._fp16:
         #     self.half()
 
-    def compute_Q(self, x, y):
+    def compute_Q(self, x, y, order):
         """Compute the approximated posterior q(z|x,y) and sample from it.
         """
         x_mask = self.to_float(torch.ne(x, 0))
         y_mask = self.to_float(torch.ne(y, 0))
         # Compute p(z|y,x) and sample z
-        q_states = self.compute_Q_states(self.x_embed_layer(x), x_mask, y, y_mask)
+        q_states = self.compute_Q_states(self.x_embed_layer(x, order), x_mask, y, y_mask)
         sampled_latent, q_prob = self.sample_from_Q(q_states, sampling=False)
         return sampled_latent, q_prob
 
