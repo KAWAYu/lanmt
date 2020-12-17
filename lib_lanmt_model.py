@@ -308,7 +308,7 @@ class LANMTModel(Transformer):
 
         # ----------- Compute prior and approximated posterior -------------#
         # Compute p(z|x)
-        prior_states = self.prior_encoder(tx, x_mask, order=order)
+        prior_states = self.prior_encoder(tx, mask=x_mask, order=order)
         prior_prob = self.prior_prob_estimator(prior_states)
         # Compute q(z|x,y) and sample z
         q_states = self.compute_Q_states(self.x_embed_layer(x, order=order), x_mask, ty, y_mask)
@@ -360,7 +360,7 @@ class LANMTModel(Transformer):
         x_mask = self.to_float(torch.ne(x, 0))
         # Compute p(z|x)
         if prior_states is None:
-            prior_states = self.prior_encoder(x, x_mask, order=order)
+            prior_states = self.prior_encoder(x, mask=x_mask, order=order)
         # Sample latent variables from prior if it's not given
         if latent is None:
             prior_prob = self.prior_prob_estimator(prior_states)
