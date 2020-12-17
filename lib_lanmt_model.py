@@ -331,7 +331,7 @@ class LANMTModel(Transformer):
         denom = x.shape[0]
         if self._shard_size is not None and self._shard_size > 0:
             loss_scores, decoder_tensors, decoder_grads = self.compute_shard_loss(
-                decoder_outputs, y, y_mask, denominator=denom, ignore_first_token=False, backward=False
+                decoder_outputs, ty, y_mask, denominator=denom, ignore_first_token=False, backward=False
             )
             loss_scores["word_acc"] *= float(y_mask.shape[0]) / self.to_float(y_mask.sum())
             score_map.update(loss_scores)
@@ -343,7 +343,7 @@ class LANMTModel(Transformer):
         if not torch.is_grad_enabled() and self.training_criteria == "BLEU":
             logits = self.expander_nn(decoder_outputs["final_states"])
             predictions = logits.argmax(-1)
-            score_map["BLEU"] = - self.get_BLEU(predictions, y)
+            score_map["BLEU"] = - self.get_BLEU(predictions, ty)
 
         # --------------------------  Bacprop gradient --------------------#
         if self._shard_size is not None and self._shard_size > 0 and decoder_tensors is not None:
