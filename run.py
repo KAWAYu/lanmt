@@ -141,8 +141,7 @@ def main():
         tgt_corpus = distilled_tgt_corpus
     else:
         tgt_corpus = train_tgt_corpus
-    # n_valid_samples = 5000 if OPTS.finetune else 500
-    n_valid_samples = 100
+    n_valid_samples = 5000 if OPTS.finetune else 500
     if OPTS.train:
         dataset = MTDataset(
             src_corpus=train_src_corpus, tgt_corpus=tgt_corpus, reordering_position=train_order_corpus,
