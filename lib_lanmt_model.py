@@ -57,7 +57,7 @@ class TransformerReorderingEmbedding(nn.Embedding):
             # バッチサイズ分の複製
             order = order.unsqueeze(2).expand(x.size(0), x.size(1), embed.size(2))
             reordered_pos_embed = pos_embed.repeat(x.size(0), 1, 1).gather(dim=1, index=order)
-            embed += reordered_pos_embed
+            embed += reordered_pos_embed + pos_embed
         return self.dropout(embed)
 
 
