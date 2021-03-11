@@ -252,8 +252,8 @@ class LANMTModel(Transformer):
         """
         assert order is not None
         score_map = {}
-        x = x.t()
-        y = y.t()
+        x = x.t().contiguous()
+        y = y.t().contiguous()
         x_mask = self.to_float(torch.ne(x, 0))
         y_mask = self.to_float(torch.ne(y, 0))
 
